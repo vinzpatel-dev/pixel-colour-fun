@@ -20,6 +20,7 @@ type SavedGame = {
 
 const SAVES_KEY = "shay-zay-pixel-saves-v1";
 const MAX_SAVES = 5;
+const APP_VERSION = "v10 TEST";
 
 function loadSavedGames(): SavedGame[] {
   try {
@@ -615,7 +616,7 @@ export default function Home() {
     {!game ? <div className="home">
       <header>
         <div className="brand"><Logo/><div className="brand-copy"><h1>Shay &amp; Zay <span>Pixel Fun</span></h1><small>Create · Colour · Play</small></div></div>
-        <button className="privacy" onClick={() => setPrivacy(true)}><b>🛡️</b><span><strong>Private &amp; safe</strong><small>Photos stay on this iPad</small></span></button>
+        <div className="header-actions"><button className="privacy" onClick={() => setPrivacy(true)}><b>🛡️</b><span><strong>Private &amp; safe</strong><small>Photos stay on this iPad</small></span></button><span className="app-version">{APP_VERSION}</span></div>
       </header>
       <section className="hero">
         <div className="intro">
@@ -661,6 +662,7 @@ export default function Home() {
         <div className="progress"><span><b>{progress}%</b> {progress === 100 ? "Amazing!" : "Keep colouring!"}</span><i><b style={{ width: `${progress}%` }}/></i></div>
         <button className={`save-game ${currentSaveId ? "saved" : ""}`} onClick={() => saveProgress()}><b>{currentSaveId ? "✓" : "↓"}</b><span>{currentSaveId ? "Saved game" : "Save progress"}</span></button>
         <button className="new" onClick={() => openPicker(camera.current)}>📷 <span>New photo</span></button>
+        <span className="app-version game-version">{APP_VERSION}</span>
       </header>
       <section className="play">
         <aside>
