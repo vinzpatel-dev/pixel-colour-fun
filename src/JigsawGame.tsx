@@ -331,7 +331,7 @@ export default function JigsawGame({ puzzle, version, onChange, onBack, onSave, 
   return <div className="game jigsaw-game">
     <header className="game-head jigsaw-head">
       <button className="back" onClick={onBack} aria-label="Back">‹</button>
-      <div className="mini-brand"><span className="logo" aria-hidden="true"><img src="./comet-icon-192.png" alt="" /></span><span className="mini-copy"><strong>Shay &amp; Zay <span>Pixel Fun</span></strong><small>Jigsaw studio</small></span></div>
+      <div className="mini-brand"><span className="logo" aria-hidden="true"><img src="./comet-icon-192.png" alt="" /></span><span className="mini-copy"><strong>Shay &amp; Zay <span>PlayLab</span></strong><small>Jigsaw studio</small></span></div>
       <div className="jigsaw-progress"><span><b>{placed}</b> / {puzzle.pieces.length} pieces</span><i><b style={{ width: `${placed / puzzle.pieces.length * 100}%` }}/></i></div>
       <button className="save-game" onClick={onSave}><b>↓</b><span>Save progress</span></button>
       <button className="new" onClick={onNewPhoto}>📷 <span>New photo</span></button>
