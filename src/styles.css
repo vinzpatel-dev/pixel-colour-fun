@@ -293,10 +293,15 @@ button:focus-visible { outline:4px solid var(--cyan); outline-offset:3px; }
 .grid-scroll { flex:1; min-height:0; overflow:auto; display:flex; place-items:initial; position:relative; border-radius:20px; background:linear-gradient(145deg,#edf8ff,#f0efff); overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
 .gesture-hint { position:absolute; z-index:4; left:50%; top:10px; min-width:max-content; padding:7px 11px; border:1px solid rgba(255,255,255,.13); border-radius:99px; color:white; background:rgba(17,20,56,.72); backdrop-filter:blur(10px); font-size:10px; font-weight:800; transform:translateX(-50%); pointer-events:none; animation:hintVisit 6s ease both; }
 .pixel-grid { margin:auto; flex:0 0 auto; display:grid; grid-template:repeat(var(--size),1fr)/repeat(var(--size),1fr); border:5px solid var(--ink); border-radius:11px; overflow:hidden; background:white; touch-action:none; box-shadow:0 10px 26px rgba(21,32,82,.2); }
-.pixel-grid button { min-width:0; min-height:0; padding:0; border:0; border-right:1px solid #d4d8e4; border-bottom:1px solid #d4d8e4; background:white; color:#626b84; font-size:clamp(6px,calc(34vw/var(--size)),21px); font-weight:850; user-select:none; contain:layout paint style; -webkit-tap-highlight-color:transparent; }
-.pixel-grid button.target { position:relative; z-index:1; background:color-mix(in srgb,var(--cell) 48%,white); color:#050d2e; font-weight:1000; box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--cell) 82%,#101b4c); text-shadow:0 1px rgba(255,255,255,.75); }
+.pixel-grid button { min-width:0; min-height:0; padding:0; border:0; border-right:1px solid #d4d8e4; border-bottom:1px solid #d4d8e4; background:white; color:#626b84; font-size:clamp(6px,calc(34vw/var(--size)),21px); font-weight:850; user-select:none; contain:paint; -webkit-tap-highlight-color:transparent; }
+.pixel-grid button.target { background:color-mix(in srgb,var(--cell) 48%,white); color:#050d2e; font-weight:1000; box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--cell) 72%,#101b4c); }
 .pixel-grid button.filled { background:var(--cell); color:transparent; }
 .pixel-grid button.wrong { background:#ffc6c6; animation:wrong .22s; }
+
+/* Keep every frame available for painting on older iPads. */
+.game,.game-head,.play aside,.board { animation:none; }
+.game-head { backdrop-filter:none; background:#fff; }
+.game .progress>i b,.game .palette button.selected { animation:none; }
 
 .mini-grid { width:min(330px,65vw); aspect-ratio:1; margin:18px auto; display:grid; grid-template-columns:repeat(var(--size),1fr); border:7px solid white; outline:3px solid #a68bf9; border-radius:23px; overflow:hidden; box-shadow:0 12px 30px rgba(41,22,101,.22); animation:artReveal .9s cubic-bezier(.16,1,.3,1) .28s both; }
 .mini-grid i { min-width:0; min-height:0; }

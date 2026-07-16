@@ -210,6 +210,7 @@ export default function Home() {
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const zoomRef = useRef(1);
   const pinch = useRef<{ distance: number; zoom: number; x: number; y: number } | null>(null);
+  const paintRect = useRef<{ left: number; top: number; width: number; height: number } | null>(null);
   const colourCellRef = useRef<(index: number) => void>(() => {});
   const filledRef = useRef<boolean[]>([]);
   const filledCountRef = useRef(0);
@@ -217,7 +218,7 @@ export default function Home() {
   const filledSyncTimer = useRef<number | null>(null);
   const saveNoticeTimer = useRef<number | null>(null);
   const [game, setGame] = useState<Game | null>(null);
-  const [filled, setFilled] = useState<boolean[]>([]);
+  const [paintStats, setPaintStats] = useState<{ done: number; remaining: number[] }>({ done: 0, remaining: [] });
   const [selected, setSelected] = useState(0);
   const [pending, setPending] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
@@ -247,20 +248,18 @@ export default function Home() {
     if (saveNoticeTimer.current !== null) window.clearTimeout(saveNoticeTimer.current);
   }, []);
 
-  const stats = useMemo(() => {
-    if (!game) return { done: 0, remaining: [] as number[] };
-    let done = 0;
-    const left = [...game.totals];
-    filled.forEach((yes, i) => {
-      if (!yes) return;
-      done += 1;
-      left[game.cells[i]] -= 1;
-    });
-    return { done, remaining: left };
-  }, [filled, game]);
-  const progress = game ? Math.round(stats.done / game.cells.length * 100) : 0;
-  const remaining = stats.remaining;
   const activateCell = useCallback((index: number) => colourCellRef.current(index), []);
+  const gridCells = useMemo(() => game ? game.cells.map((colour, index) => <PixelCell
+    key={index}
+    index={index}
+    number={colour + 1}
+    colour={game.colours[colour]}
+    filled={filledRef.current[index]}
+    target={!filledRef.current[index] && colour === selected}
+    activate={activateCell}
+  />) : [], [activateCell, game, selected]);
+  const progress = game ? Math.round(paintStats.done / game.cells.length * 100) : 0;
+  const remaining = paintStats.remaining;
 
   function showSaveMessage(message: string) {
     setSaveNotice(message);
@@ -328,7 +327,8 @@ export default function Home() {
     filledRef.current = restored;
     filledCountRef.current = filledCount;
     remainingCountRef.current = remainingCounts;
-    setGame(save.game); setFilled(restored); setSelected(selectedColour); setBrushSize(save.brushSize || 1);
+    setPaintStats({ done: filledCount, remaining: [...remainingCounts] });
+    setGame(save.game); setSelected(selectedColour); setBrushSize(save.brushSize || 1);
     setCurrentSaveId(save.id); setCelebrate(false); setPhotoError("");
     zoomRef.current = 1; setZoom(1);
   }
@@ -343,7 +343,7 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (!currentSaveId || !game || filled.length !== game.cells.length) return;
+    if (!currentSaveId || !game || filledRef.current.length !== game.cells.length) return;
     const timer = window.setTimeout(() => {
       setSavedGames((current) => {
         const existing = current.find((save) => save.id === currentSaveId);
@@ -356,7 +356,7 @@ export default function Home() {
       });
     }, 320);
     return () => window.clearTimeout(timer);
-  }, [brushSize, currentSaveId, filled, game, selected]);
+  }, [brushSize, currentSaveId, game, paintStats.done, selected]);
 
   function acceptPhoto(file?: File) {
     if (!file) return;
@@ -394,7 +394,8 @@ export default function Home() {
       filledRef.current = empty;
       filledCountRef.current = 0;
       remainingCountRef.current = [...next.totals];
-      setGame(next); setFilled(empty); setSelected(0); setBrushSize(1);
+      setPaintStats({ done: 0, remaining: [...next.totals] });
+      setGame(next); setSelected(0); setBrushSize(1);
       setCurrentSaveId(null);
       zoomRef.current = 1; setZoom(1);
       URL.revokeObjectURL(preview); setPreview(""); setPending(null);
@@ -408,15 +409,15 @@ export default function Home() {
       window.clearTimeout(filledSyncTimer.current);
       filledSyncTimer.current = null;
     }
-    setFilled([...filledRef.current]);
+    setPaintStats({ done: filledCountRef.current, remaining: [...remainingCountRef.current] });
   }
 
   function scheduleFilledSync() {
     if (filledSyncTimer.current !== null) return;
     filledSyncTimer.current = window.setTimeout(() => {
       filledSyncTimer.current = null;
-      setFilled([...filledRef.current]);
-    }, 60);
+      setPaintStats({ done: filledCountRef.current, remaining: [...remainingCountRef.current] });
+    }, 120);
   }
 
   function colourCell(index: number, showWrong = true) {
@@ -487,13 +488,19 @@ export default function Home() {
   }
 
   function pointToCell(clientX: number, clientY: number) {
-    const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-pixel]");
-    const index = Number(target?.dataset.pixel);
-    if (Number.isInteger(index)) paintToCell(index);
+    if (!game || !grid.current) return;
+    const rect = paintRect.current ?? grid.current.getBoundingClientRect();
+    paintRect.current = rect;
+    const x = clientX - rect.left; const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x >= rect.width || y >= rect.height) return;
+    const column = Math.min(game.size - 1, Math.floor(x / rect.width * game.size));
+    const row = Math.min(game.size - 1, Math.floor(y / rect.height * game.size));
+    paintToCell(row * game.size + column);
   }
 
   function setBoardZoom(value: number) {
     const next = Math.max(1, Math.min(5, value));
+    paintRect.current = null;
     zoomRef.current = next; setZoom(next);
   }
 
@@ -513,6 +520,7 @@ export default function Home() {
       x: (middleX - rect.left) / rect.width,
       y: (middleY - rect.top) / rect.height,
     };
+    paintRect.current = null;
     drawing.current = false;
   }
 
@@ -520,6 +528,7 @@ export default function Home() {
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     event.currentTarget.setPointerCapture(event.pointerId);
     if (pointers.current.size === 1) {
+      if (grid.current) paintRect.current = grid.current.getBoundingClientRect();
       drawing.current = true; lastCell.current = -1; pointToCell(event.clientX, event.clientY);
     } else beginPinch();
   }
@@ -540,16 +549,13 @@ export default function Home() {
         viewport.current.scrollLeft += rect.left + gesture.x * rect.width - middleX;
         viewport.current.scrollTop += rect.top + gesture.y * rect.height - middleY;
       });
-    } else if (drawing.current) {
-      const events = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent];
-      events.forEach((point) => pointToCell(point.clientX, point.clientY));
-    }
+    } else if (drawing.current) pointToCell(event.clientX, event.clientY);
   }
 
   function pointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
     pointers.current.delete(event.pointerId);
     if (pointers.current.size < 2) pinch.current = null;
-    if (pointers.current.size === 0) { drawing.current = false; lastCell.current = -1; }
+    if (pointers.current.size === 0) { drawing.current = false; lastCell.current = -1; paintRect.current = null; }
   }
 
   function newPicture() {
@@ -559,7 +565,7 @@ export default function Home() {
     if (game && currentSaveId && !saveProgress(false)) return;
     if (filledSyncTimer.current !== null) window.clearTimeout(filledSyncTimer.current);
     filledSyncTimer.current = null; filledRef.current = []; filledCountRef.current = 0; remainingCountRef.current = [];
-    setGame(null); setFilled([]); setCelebrate(false); setPending(null); setPreview(""); setPhotoError(""); setCurrentSaveId(null); pointers.current.clear();
+    setGame(null); setPaintStats({ done: 0, remaining: [] }); setCelebrate(false); setPending(null); setPreview(""); setPhotoError(""); setCurrentSaveId(null); pointers.current.clear();
   }
 
   function savePicture() {
@@ -641,7 +647,7 @@ export default function Home() {
             onPointerMove={pointerMove}
             onPointerUp={pointerEnd}
             onPointerCancel={pointerEnd}>
-            {game.cells.map((colour, i) => <PixelCell key={i} index={i} number={colour + 1} colour={game.colours[colour]} filled={filled[i]} target={!filled[i] && colour === selected} activate={activateCell}/>)}
+            {gridCells}
           </div></div>
         </div>
       </section>

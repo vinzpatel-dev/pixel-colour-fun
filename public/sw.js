@@ -1,4 +1,4 @@
-const CACHE = "shay-zay-pixel-fun-v8";
+const CACHE = "shay-zay-pixel-fun-v9";
 const CORE = ["./", "./index.html", "./manifest-comet.webmanifest", "./favicon.svg", "./comet-apple-touch-icon.png", "./comet-icon-192.png", "./comet-icon-512.png"];
 
 self.addEventListener("install", (event) => {
