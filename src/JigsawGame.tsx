@@ -1,37 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { JIGSAW_LEVELS, buildPuzzlePieces, canSnap, pieceEdges } from "./jigsawModel";
+import type { JigsawLevel, JigsawPiece, JigsawPuzzle } from "./jigsawModel";
 
-export type JigsawLevel = {
-  name: string;
-  sub: string;
-  rows: number;
-  cols: number;
-  icon: string;
-  hint: boolean;
-};
-
-export type JigsawPiece = {
-  id: number;
-  row: number;
-  col: number;
-  slot: number;
-  placed: boolean;
-};
-
-export type JigsawPuzzle = {
-  rows: number;
-  cols: number;
-  image: string;
-  pieces: JigsawPiece[];
-  hint: boolean;
-};
-
-export const JIGSAW_LEVELS: JigsawLevel[] = [
-  { name: "Starter", sub: "3 × 3 · Nice and easy", rows: 3, cols: 3, icon: "●", hint: true },
-  { name: "Fun", sub: "4 × 4 · A little challenge", rows: 4, cols: 4, icon: "◆", hint: true },
-  { name: "Tricky", sub: "6 × 6 · Puzzle pro", rows: 6, cols: 6, icon: "✦", hint: false },
-  { name: "Expert", sub: "8 × 8 · Maximum pieces", rows: 8, cols: 8, icon: "✺", hint: false },
-];
+export { JIGSAW_LEVELS } from "./jigsawModel";
+export type { JigsawLevel, JigsawPiece, JigsawPuzzle } from "./jigsawModel";
 
 function loadPhoto(file: File) {
   return new Promise<{ source: CanvasImageSource; width: number; height: number; release: () => void }>(async (resolve, reject) => {
@@ -49,15 +22,6 @@ function loadPhoto(file: File) {
   });
 }
 
-function shuffledSlots(count: number) {
-  const slots = Array.from({ length: count }, (_, index) => index);
-  for (let index = slots.length - 1; index > 0; index -= 1) {
-    const swap = Math.floor(Math.random() * (index + 1));
-    [slots[index], slots[swap]] = [slots[swap], slots[index]];
-  }
-  return slots;
-}
-
 export async function photoToJigsaw(file: File, level: JigsawLevel): Promise<JigsawPuzzle> {
   const photo = await loadPhoto(file);
   const canvas = document.createElement("canvas");
@@ -71,32 +35,12 @@ export async function photoToJigsaw(file: File, level: JigsawLevel): Promise<Jig
   context.imageSmoothingQuality = "high";
   context.drawImage(photo.source, (photo.width - crop) / 2, (photo.height - crop) / 2, crop, crop, 0, 0, 1024, 1024);
   photo.release();
-  const slots = shuffledSlots(level.rows * level.cols);
   return {
     rows: level.rows,
     cols: level.cols,
     image: canvas.toDataURL("image/jpeg", .9),
     hint: level.hint,
-    pieces: Array.from({ length: level.rows * level.cols }, (_, id) => ({
-      id,
-      row: Math.floor(id / level.cols),
-      col: id % level.cols,
-      slot: slots[id],
-      placed: false,
-    })),
-  };
-}
-
-function edgeSign(row: number, col: number, salt: number) {
-  return ((row * 31 + col * 17 + salt * 13) & 1) ? 1 : -1;
-}
-
-function pieceEdges(piece: Pick<JigsawPiece, "row" | "col">, rows: number, cols: number) {
-  return {
-    top: piece.row === 0 ? 0 : -edgeSign(piece.row - 1, piece.col, 1),
-    right: piece.col === cols - 1 ? 0 : edgeSign(piece.row, piece.col, 2),
-    bottom: piece.row === rows - 1 ? 0 : edgeSign(piece.row, piece.col, 1),
-    left: piece.col === 0 ? 0 : -edgeSign(piece.row, piece.col - 1, 2),
+    pieces: buildPuzzlePieces(level.rows, level.cols),
   };
 }
 
@@ -367,9 +311,7 @@ export default function JigsawGame({ puzzle, version, onChange, onBack, onSave, 
     const pieceHeight = currentLayout.boardSize / puzzle.rows;
     const targetX = currentLayout.boardX + piece.col * pieceWidth;
     const targetY = currentLayout.boardY + piece.row * pieceHeight;
-    const distance = Math.hypot(moving.x - targetX, moving.y - targetY);
-    const snapDistance = Math.max(22, Math.min(pieceWidth, pieceHeight) * .48);
-    if (distance <= snapDistance) {
+    if (canSnap(moving.x, moving.y, targetX, targetY, pieceWidth, pieceHeight)) {
       const pieces = puzzle.pieces.map((item) => item.id === piece.id ? { ...item, placed: true } : item);
       onChange({ ...puzzle, pieces, hint });
       if (pieces.every((item) => item.placed)) window.setTimeout(onComplete, 220);
