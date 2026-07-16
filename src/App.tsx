@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 
 type RGB = [number, number, number];
 type Lab = [number, number, number];
@@ -93,17 +93,37 @@ function reduceColours(raw: RGB[], wanted: number) {
 }
 
 async function photoToGame(file: File, level: Level): Promise<Game> {
-  const bitmap = await createImageBitmap(file);
+  let source: CanvasImageSource;
+  let sourceWidth: number;
+  let sourceHeight: number;
+  let release = () => {};
+  try {
+    if (typeof createImageBitmap !== "function") throw new Error("ImageBitmap unavailable");
+    const bitmap = await createImageBitmap(file);
+    source = bitmap; sourceWidth = bitmap.width; sourceHeight = bitmap.height;
+    release = () => bitmap.close();
+  } catch {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    source = image;
+    release = () => URL.revokeObjectURL(url);
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("This photo format could not be opened"));
+      image.src = url;
+    });
+    sourceWidth = image.naturalWidth; sourceHeight = image.naturalHeight;
+  }
   const canvas = document.createElement("canvas");
   const samplingScale = 4;
   canvas.width = canvas.height = level.size * samplingScale;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas unavailable");
-  const crop = Math.min(bitmap.width, bitmap.height);
+  const crop = Math.min(sourceWidth, sourceHeight);
   ctx.fillStyle = "white"; ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(bitmap, (bitmap.width - crop) / 2, (bitmap.height - crop) / 2, crop, crop, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
+  ctx.drawImage(source, (sourceWidth - crop) / 2, (sourceHeight - crop) / 2, crop, crop, 0, 0, canvas.width, canvas.height);
+  release();
   const bytes = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
   const raw: RGB[] = [];
   for (let gridY = 0; gridY < level.size; gridY += 1) {
@@ -127,6 +147,25 @@ function Logo() {
   return <span className="logo" aria-hidden="true"><i>S<span>Z</span></i></span>;
 }
 
+type PixelCellProps = {
+  index: number;
+  number: number;
+  colour: string;
+  filled: boolean;
+  target: boolean;
+  activate: (index: number) => void;
+};
+
+const PixelCell = memo(function PixelCell({ index, number, colour, filled, target, activate }: PixelCellProps) {
+  return <button
+    data-pixel={index}
+    className={`${filled ? "filled" : ""} ${target ? "target" : ""}`}
+    style={{ "--cell": colour } as CSSProperties}
+    onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") activate(index); }}
+    aria-label={`Pixel number ${number}`}
+  >{filled ? "" : number}</button>;
+});
+
 export default function Home() {
   const camera = useRef<HTMLInputElement>(null);
   const photos = useRef<HTMLInputElement>(null);
@@ -137,15 +176,20 @@ export default function Home() {
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const zoomRef = useRef(1);
   const pinch = useRef<{ distance: number; zoom: number; x: number; y: number } | null>(null);
+  const colourCellRef = useRef<(index: number) => void>(() => {});
+  const filledRef = useRef<boolean[]>([]);
+  const filledCountRef = useRef(0);
+  const remainingCountRef = useRef<number[]>([]);
+  const filledSyncTimer = useRef<number | null>(null);
   const [game, setGame] = useState<Game | null>(null);
   const [filled, setFilled] = useState<boolean[]>([]);
   const [selected, setSelected] = useState(0);
   const [pending, setPending] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
   const [loading, setLoading] = useState(false);
+  const [photoError, setPhotoError] = useState("");
   const [privacy, setPrivacy] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
-  const [wrong, setWrong] = useState(-1);
   const [zoom, setZoom] = useState(1);
   const [fitSize, setFitSize] = useState(480);
   const [brushSize, setBrushSize] = useState(1);
@@ -160,19 +204,46 @@ export default function Home() {
     return () => observer.disconnect();
   }, [game]);
 
-  const done = useMemo(() => filled.filter(Boolean).length, [filled]);
-  const progress = game ? Math.round(done / game.cells.length * 100) : 0;
-  const remaining = useMemo(() => {
-    if (!game) return [];
+  useEffect(() => () => {
+    if (filledSyncTimer.current !== null) window.clearTimeout(filledSyncTimer.current);
+  }, []);
+
+  const stats = useMemo(() => {
+    if (!game) return { done: 0, remaining: [] as number[] };
+    let done = 0;
     const left = [...game.totals];
-    filled.forEach((yes, i) => { if (yes) left[game.cells[i]] -= 1; });
-    return left;
+    filled.forEach((yes, i) => {
+      if (!yes) return;
+      done += 1;
+      left[game.cells[i]] -= 1;
+    });
+    return { done, remaining: left };
   }, [filled, game]);
+  const progress = game ? Math.round(stats.done / game.cells.length * 100) : 0;
+  const remaining = stats.remaining;
+  const activateCell = useCallback((index: number) => colourCellRef.current(index), []);
 
   function acceptPhoto(file?: File) {
-    if (!file || !file.type.startsWith("image/")) return;
+    if (!file) return;
+    if (file.type && !file.type.startsWith("image/")) {
+      setPhotoError("That file is not a photo. Please choose another one.");
+      return;
+    }
     if (preview) URL.revokeObjectURL(preview);
+    setPhotoError("");
     setPending(file); setPreview(URL.createObjectURL(file));
+  }
+
+  function openPicker(input: HTMLInputElement | null) {
+    if (!input) return;
+    input.value = "";
+    input.click();
+  }
+
+  function photoChosen(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.item(0) ?? undefined;
+    acceptPhoto(file);
+    event.currentTarget.value = "";
   }
 
   async function begin(level: Level) {
@@ -180,15 +251,36 @@ export default function Home() {
     setLoading(true);
     try {
       const next = await photoToGame(pending, level);
-      setGame(next); setFilled(Array(next.cells.length).fill(false)); setSelected(0); setBrushSize(1);
+      const empty = Array(next.cells.length).fill(false);
+      filledRef.current = empty;
+      filledCountRef.current = 0;
+      remainingCountRef.current = [...next.totals];
+      setGame(next); setFilled(empty); setSelected(0); setBrushSize(1);
       zoomRef.current = 1; setZoom(1);
       URL.revokeObjectURL(preview); setPreview(""); setPending(null);
+    } catch {
+      setPhotoError("We couldn't open that photo. Try another photo, or save it as JPG first.");
     } finally { setLoading(false); }
   }
 
-  function colourCell(index: number) {
-    if (!game || index === lastCell.current) return;
-    lastCell.current = index;
+  function syncFilledNow() {
+    if (filledSyncTimer.current !== null) {
+      window.clearTimeout(filledSyncTimer.current);
+      filledSyncTimer.current = null;
+    }
+    setFilled([...filledRef.current]);
+  }
+
+  function scheduleFilledSync() {
+    if (filledSyncTimer.current !== null) return;
+    filledSyncTimer.current = window.setTimeout(() => {
+      filledSyncTimer.current = null;
+      setFilled([...filledRef.current]);
+    }, 60);
+  }
+
+  function colourCell(index: number, showWrong = true) {
+    if (!game) return;
     const row = Math.floor(index / game.size); const column = index % game.size;
     const radius = Math.floor(brushSize / 2);
     const covered: number[] = [];
@@ -197,26 +289,67 @@ export default function Home() {
         covered.push(y * game.size + x);
       }
     }
-    const canPaint = covered.some((cell) => game.cells[cell] === selected);
-    if (!canPaint) {
-      setWrong(index); window.setTimeout(() => setWrong(-1), 220); return;
-    }
-    setFilled((current) => {
-      const next = [...current];
-      covered.forEach((cell) => { if (game.cells[cell] === selected) next[cell] = true; });
-      if (game.cells.every((c, i) => c !== selected || next[i])) {
-        const nextColour = game.colours.findIndex((_, c) => game.cells.some((x, i) => x === c && !next[i]));
-        if (nextColour >= 0) setSelected(nextColour);
+    const matching = covered.filter((cell) => game.cells[cell] === selected);
+    const changed = matching.filter((cell) => !filledRef.current[cell]);
+    if (!matching.length) {
+      if (!showWrong) return;
+      const button = grid.current?.children.item(index) as HTMLButtonElement | null;
+      if (button) {
+        button.classList.remove("wrong");
+        window.requestAnimationFrame(() => button.classList.add("wrong"));
+        window.setTimeout(() => button.classList.remove("wrong"), 220);
       }
-      if (next.every(Boolean)) window.setTimeout(() => setCelebrate(true), 180);
-      return next;
+      return;
+    }
+    if (!changed.length) return;
+    changed.forEach((cell) => {
+      filledRef.current[cell] = true;
+      filledCountRef.current += 1;
+      remainingCountRef.current[selected] -= 1;
+      const button = grid.current?.children.item(cell) as HTMLButtonElement | null;
+      if (button) {
+        button.classList.remove("target", "wrong");
+        button.classList.add("filled");
+        button.textContent = "";
+      }
     });
+    const colourFinished = remainingCountRef.current[selected] === 0;
+    const pictureFinished = filledCountRef.current === game.cells.length;
+    if (colourFinished || pictureFinished) syncFilledNow();
+    else scheduleFilledSync();
+    if (colourFinished && !pictureFinished) {
+      const nextColour = remainingCountRef.current.findIndex((count) => count > 0);
+      if (nextColour >= 0) setSelected(nextColour);
+    }
+    if (pictureFinished) window.setTimeout(() => setCelebrate(true), 180);
+  }
+  colourCellRef.current = colourCell;
+
+  function paintToCell(index: number) {
+    if (!game || index === lastCell.current) return;
+    const previous = lastCell.current;
+    if (previous < 0) {
+      lastCell.current = index;
+      colourCell(index);
+      return;
+    }
+    const startRow = Math.floor(previous / game.size); const startColumn = previous % game.size;
+    const endRow = Math.floor(index / game.size); const endColumn = index % game.size;
+    const steps = Math.max(Math.abs(endRow - startRow), Math.abs(endColumn - startColumn));
+    for (let step = 1; step <= Math.max(1, steps); step += 1) {
+      const row = Math.round(startRow + (endRow - startRow) * step / Math.max(1, steps));
+      const column = Math.round(startColumn + (endColumn - startColumn) * step / Math.max(1, steps));
+      const cell = row * game.size + column;
+      if (cell === lastCell.current) continue;
+      lastCell.current = cell;
+      colourCell(cell, false);
+    }
   }
 
-  function pointToCell(event: ReactPointerEvent<HTMLDivElement>) {
-    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-pixel]");
+  function pointToCell(clientX: number, clientY: number) {
+    const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-pixel]");
     const index = Number(target?.dataset.pixel);
-    if (Number.isInteger(index)) colourCell(index);
+    if (Number.isInteger(index)) paintToCell(index);
   }
 
   function setBoardZoom(value: number) {
@@ -247,7 +380,7 @@ export default function Home() {
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     event.currentTarget.setPointerCapture(event.pointerId);
     if (pointers.current.size === 1) {
-      drawing.current = true; lastCell.current = -1; pointToCell(event);
+      drawing.current = true; lastCell.current = -1; pointToCell(event.clientX, event.clientY);
     } else beginPinch();
   }
 
@@ -267,7 +400,10 @@ export default function Home() {
         viewport.current.scrollLeft += rect.left + gesture.x * rect.width - middleX;
         viewport.current.scrollTop += rect.top + gesture.y * rect.height - middleY;
       });
-    } else if (drawing.current) pointToCell(event);
+    } else if (drawing.current) {
+      const events = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent];
+      events.forEach((point) => pointToCell(point.clientX, point.clientY));
+    }
   }
 
   function pointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
@@ -277,7 +413,9 @@ export default function Home() {
   }
 
   function newPicture() {
-    setGame(null); setFilled([]); setCelebrate(false); setPending(null); setPreview(""); pointers.current.clear();
+    if (filledSyncTimer.current !== null) window.clearTimeout(filledSyncTimer.current);
+    filledSyncTimer.current = null; filledRef.current = []; filledCountRef.current = 0; remainingCountRef.current = [];
+    setGame(null); setFilled([]); setCelebrate(false); setPending(null); setPreview(""); setPhotoError(""); pointers.current.clear();
   }
 
   function savePicture() {
@@ -290,8 +428,8 @@ export default function Home() {
   }
 
   return <main>
-    <input ref={camera} className="hidden-input" type="file" accept="image/*" capture="environment" onChange={(e) => acceptPhoto(e.target.files?.[0])} />
-    <input ref={photos} className="hidden-input" type="file" accept="image/*" onChange={(e) => acceptPhoto(e.target.files?.[0])} />
+    <input ref={camera} className="hidden-input" type="file" accept="image/*,.heic,.heif" capture="environment" onChange={photoChosen} />
+    <input ref={photos} className="hidden-input" type="file" accept="image/*,.heic,.heif" onChange={photoChosen} />
 
     {!game ? <div className="home">
       <header>
@@ -303,8 +441,9 @@ export default function Home() {
           <p className="eyebrow"><span>✦</span> Your private pixel studio</p>
           <h2>Snap it. Pixel it.<br/><em>Make it yours.</em></h2>
           <p>Turn any photo into a colour-by-number adventure.</p>
-          <button className="take" onClick={() => camera.current?.click()}>📷 <span>Take a Photo</span></button>
-          <button className="choose" onClick={() => photos.current?.click()}>🖼️ <span>Choose a Photo</span></button>
+          <button className="take" onClick={() => openPicker(camera.current)}>📷 <span>Take a Photo</span></button>
+          <button className="choose" onClick={() => openPicker(photos.current)}>🖼️ <span>Choose a Photo</span></button>
+          {photoError && <p className="photo-error" role="alert">{photoError}</p>}
           <div className="hero-chips"><span><b/>Offline ready</span><span><b/>Always ad-free</span><span><b/>On-device privacy</span></div>
         </div>
         <div className="demo">
@@ -328,7 +467,7 @@ export default function Home() {
         <button className="back" onClick={newPicture} aria-label="Back">‹</button>
         <div className="mini-brand"><Logo/><span className="mini-copy"><strong>Shay &amp; Zay <span>Pixel Fun</span></strong><small>Creative studio</small></span></div>
         <div className="progress"><span><b>{progress}%</b> {progress === 100 ? "Amazing!" : "Keep colouring!"}</span><i><b style={{ width: `${progress}%` }}/></i></div>
-        <button className="new" onClick={() => camera.current?.click()}>📷 <span>New photo</span></button>
+        <button className="new" onClick={() => openPicker(camera.current)}>📷 <span>New photo</span></button>
       </header>
       <section className="play">
         <aside>
@@ -346,18 +485,19 @@ export default function Home() {
             onPointerMove={pointerMove}
             onPointerUp={pointerEnd}
             onPointerCancel={pointerEnd}>
-            {game.cells.map((colour, i) => <button key={i} data-pixel={i} className={`${filled[i] ? "filled" : ""} ${!filled[i] && colour === selected ? "target" : ""} ${wrong === i ? "wrong" : ""}`} style={{ "--cell": game.colours[colour] } as CSSProperties} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") colourCell(i); }} aria-label={`Pixel number ${colour + 1}`}>{filled[i] ? "" : colour + 1}</button>)}
+            {game.cells.map((colour, i) => <PixelCell key={i} index={i} number={colour + 1} colour={game.colours[colour]} filled={filled[i]} target={!filled[i] && colour === selected} activate={activateCell}/>)}
           </div></div>
         </div>
       </section>
     </div>}
 
     {pending && preview && <div className="overlay"><section className="size-modal">
-      <button className="close" onClick={() => { URL.revokeObjectURL(preview); setPending(null); setPreview(""); }}>×</button>
+      <button className="close" onClick={() => { URL.revokeObjectURL(preview); setPending(null); setPreview(""); setPhotoError(""); }}>×</button>
       <div className="preview"><img src={preview} alt="Chosen photo" /></div>
       <div className="levels"><p className="eyebrow">Choose your challenge</p><h2>How detailed?</h2><p>More pixels and colours make the finished picture look closer to your photo.</p>
         {LEVELS.map((level, i) => <button key={level.size} className={i === 1 ? "recommended" : i === 3 ? "ultra" : ""} disabled={loading} onClick={() => begin(level)}><i>{level.icon}</i><span><b>{level.name}</b><small>{level.sub}</small></span><span className="level-spec"><b>{level.size}×{level.size}</b><small>pixels</small></span>{i === 1 && <em>POPULAR</em>}{i === 3 && <em>MAX DETAIL</em>}<strong>›</strong></button>)}
         {loading && <div className="loading"><i/> Building your pixel world…</div>}
+        {photoError && <p className="photo-error modal-error" role="alert">{photoError}</p>}
       </div>
     </section></div>}
 

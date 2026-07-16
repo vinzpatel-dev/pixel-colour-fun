@@ -1,14 +1,24 @@
 <svg width="512" height="512" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="g" x1="6" y1="3" x2="59" y2="63" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#30D5FF"/>
-      <stop offset=".48" stop-color="#6D4AFF"/>
-      <stop offset="1" stop-color="#FF5BA7"/>
+    <radialGradient id="sky" cx="46" cy="35" r="50" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#32118B"/>
+      <stop offset=".6" stop-color="#07133F"/>
+      <stop offset="1" stop-color="#030821"/>
+    </radialGradient>
+    <linearGradient id="star" x1="38" y1="9" x2="50" y2="36" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF78B"/>
+      <stop offset=".46" stop-color="#FFD91E"/>
+      <stop offset="1" stop-color="#FF9C00"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="18" fill="url(#g)"/>
-  <rect x="7" y="7" width="50" height="50" rx="15" fill="#111438" stroke="#fff" stroke-opacity=".92" stroke-width="2"/>
-  <path d="M14 14h7v7h-7zm29 0h7v7h-7zM14 43h7v7h-7zm29 0h7v7h-7z" fill="#30D5FF" opacity=".9"/>
-  <text x="15" y="39" fill="white" font-family="Arial Rounded MT Bold,Arial,sans-serif" font-size="23" font-weight="900">S</text>
-  <text x="33" y="44" fill="#FFD34D" font-family="Arial Rounded MT Bold,Arial,sans-serif" font-size="23" font-weight="900">Z</text>
+  <rect width="64" height="64" rx="15" fill="url(#sky)"/>
+  <path d="M10 50 36 25l8 8-25 24z" fill="#11D7EC"/>
+  <path d="M14 53 38 29l7 6-22 23z" fill="#7543F2"/>
+  <path d="M18 54 40 32l6 5-18 20z" fill="#F31B9A"/>
+  <path d="M23 52 41 34l5 4-15 17z" fill="#FF7B25"/>
+  <path d="m44 7 4.1 10.2 11 1-8.4 7.1 2.6 10.8-9.3-5.8-9.4 5.8 2.7-10.8-8.5-7.1 11.1-1z" fill="url(#star)" stroke="#FFF2A0" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M8 47h5v5H8zm8-2h4v4h-4zm-1 10h3v3h-3z" fill="#18D4EB"/>
+  <path d="M20 48h5v5h-5zm6-7h3v3h-3z" fill="#F52AA0"/>
+  <path d="M27 47h4v4h-4zm6-9h3v3h-3z" fill="#7546F5"/>
+  <path d="M31 52h3v3h-3zm5-9h3v3h-3z" fill="#C9F000"/>
 </svg>
