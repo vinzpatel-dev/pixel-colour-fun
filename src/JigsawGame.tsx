@@ -47,31 +47,28 @@ export async function photoToJigsaw(file: File, level: JigsawLevel): Promise<Jig
 function piecePath(x: number, y: number, width: number, height: number, piece: Pick<JigsawPiece, "row" | "col">, rows: number, cols: number) {
   const path = new Path2D();
   const edges = pieceEdges(piece, rows, cols);
-  const tab = Math.min(width, height) * .19;
+  const tab = Math.min(width, height) * .2;
+  const edge = (transform: (along: number, outward: number) => readonly [number, number], sign: number) => {
+    const point = (along: number, amount: number) => transform(along, sign * tab * amount);
+    const line = (along: number, amount = 0) => path.lineTo(...point(along, amount));
+    const curve = (firstAlong: number, firstAmount: number, secondAlong: number, secondAmount: number, endAlong: number, endAmount: number) => {
+      path.bezierCurveTo(...point(firstAlong, firstAmount), ...point(secondAlong, secondAmount), ...point(endAlong, endAmount));
+    };
+    if (!sign) { line(1); return; }
+    line(.35);
+    // Narrow neck flowing into a round bulb gives a familiar, child-friendly
+    // puzzle tab without the sharp peaks created by triangular joins.
+    curve(.39, 0, .41, .12, .41, .34);
+    curve(.41, .72, .45, 1, .5, 1);
+    curve(.55, 1, .59, .72, .59, .34);
+    curve(.59, .12, .61, 0, .65, 0);
+    line(1);
+  };
   path.moveTo(x, y);
-  path.lineTo(x + width * .32, y);
-  if (edges.top) {
-    path.bezierCurveTo(x + width * .38, y, x + width * .38, y - edges.top * tab, x + width * .45, y - edges.top * tab);
-    path.bezierCurveTo(x + width * .55, y - edges.top * tab, x + width * .62, y, x + width * .68, y);
-  }
-  path.lineTo(x + width, y);
-  path.lineTo(x + width, y + height * .32);
-  if (edges.right) {
-    path.bezierCurveTo(x + width, y + height * .38, x + width + edges.right * tab, y + height * .38, x + width + edges.right * tab, y + height * .45);
-    path.bezierCurveTo(x + width + edges.right * tab, y + height * .55, x + width, y + height * .62, x + width, y + height * .68);
-  }
-  path.lineTo(x + width, y + height);
-  path.lineTo(x + width * .68, y + height);
-  if (edges.bottom) {
-    path.bezierCurveTo(x + width * .62, y + height, x + width * .62, y + height + edges.bottom * tab, x + width * .55, y + height + edges.bottom * tab);
-    path.bezierCurveTo(x + width * .45, y + height + edges.bottom * tab, x + width * .38, y + height, x + width * .32, y + height);
-  }
-  path.lineTo(x, y + height);
-  path.lineTo(x, y + height * .68);
-  if (edges.left) {
-    path.bezierCurveTo(x, y + height * .62, x - edges.left * tab, y + height * .62, x - edges.left * tab, y + height * .55);
-    path.bezierCurveTo(x - edges.left * tab, y + height * .45, x, y + height * .38, x, y + height * .32);
-  }
+  edge((along, outward) => [x + along * width, y - outward] as const, edges.top);
+  edge((along, outward) => [x + width + outward, y + along * height] as const, edges.right);
+  edge((along, outward) => [x + width - along * width, y + height + outward] as const, edges.bottom);
+  edge((along, outward) => [x - outward, y + height - along * height] as const, edges.left);
   path.closePath();
   return path;
 }
@@ -312,11 +309,16 @@ export default function JigsawGame({ puzzle, version, onChange, onBack, onSave, 
     const targetX = currentLayout.boardX + piece.col * pieceWidth;
     const targetY = currentLayout.boardY + piece.row * pieceHeight;
     if (canSnap(moving.x, moving.y, targetX, targetY, pieceWidth, pieceHeight)) {
+      // Do not let a queued drag frame repaint the old, unplaced puzzle after
+      // React accepts the drop. The puzzle-change effect schedules the fresh frame.
+      if (drawFrame.current !== null) {
+        window.cancelAnimationFrame(drawFrame.current);
+        drawFrame.current = null;
+      }
       const pieces = puzzle.pieces.map((item) => item.id === piece.id ? { ...item, placed: true } : item);
       onChange({ ...puzzle, pieces, hint });
       if (pieces.every((item) => item.placed)) window.setTimeout(onComplete, 220);
-    }
-    queueDraw();
+    } else queueDraw();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   }
 

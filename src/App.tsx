@@ -38,7 +38,7 @@ const COMPLETED_DB = "shay-zay-pixel-library";
 const COMPLETED_STORE = "completed-pictures";
 const JIGSAW_STORE = "jigsaw-saves";
 const MAX_COMPLETED = 10;
-const APP_VERSION = "v12 TEST";
+const APP_VERSION = "v12.1 TEST";
 
 function loadSavedGames(): SavedGame[] {
   try {
