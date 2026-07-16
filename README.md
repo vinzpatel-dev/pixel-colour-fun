@@ -1,6 +1,6 @@
-# Shay & Zay Pixel Fun
+# Shay & Zay PlayLab
 
-A private, child-friendly photo-to-pixel colour-by-number app designed for iPad.
+A private, child-friendly photo-to-pixel colour-by-number and jigsaw puzzle app designed for iPad.
 
 ## Privacy
 
@@ -14,5 +14,5 @@ A private, child-friendly photo-to-pixel colour-by-number app designed for iPad.
 1. Open the GitHub Pages link in Safari while connected to the internet.
 2. Wait for the app to finish loading.
 3. Tap **Share** and then **Add to Home Screen**.
-4. Open **Shay & Zay Pixel Fun** from its new Home Screen icon.
+4. Open **Shay & Zay PlayLab** from its new Home Screen icon.
 5. It can now be used without an internet connection.
